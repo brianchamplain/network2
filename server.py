@@ -22,6 +22,7 @@ import socket
 import asyncio
 import json
 import argparse
+import ssl
 
 
 class AsyncServer(asyncio.Protocol):
@@ -33,6 +34,14 @@ class AsyncServer(asyncio.Protocol):
     error_list = {
         "user does not exist",
     }
+
+    """
+    def __init__(self, certfile, cafile=None):
+        super().__init__()
+        purpose = ssl.Purpose.CLIENT_AUTH
+        context = ssl.create_default_context(purpose, cafile=cafile)
+        context.load_cert_chain(certfile)
+    """
 
     def connection_made(self, transport):
         """
