@@ -21,69 +21,140 @@ data from server and user input from stdin
 
 import socket
 import time
-import random
 import asyncio
 
-"""
-counter = 0
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(("", 9000))
-sock.listen(100)
-
-while True:
-    conn, addr = sock.accept()
-    print("Accepted connection from {}".format(addr))
-    while True:
-        conn.sendall(str(counter).encode("ascii"))
-        time.sleep(3 * random.random())
-        counter += 1
-"""
-#Example was given by josh are the above thingy here
-#The below thingy is the one we work on
-#code was adapted from the book chapter7 btw remember to put it in somewhere
 class AsyncServer(asyncio.Protocol):
-    def __init__(selfself, server, sock, name):
-        self.users_list = []
+    server_info = {
+        "USER_LIST": [],
+        "MESSAGES": [],
+    }
 
-    def connection_made(selfself,transport):
+    error_list = {
+        "user does not exist",
+    }
+
+    def __init__(self, server, sock, name):
+        super().__init__()
+
+    def connection_made(self, transport):
+        """
+            prints connection data to the console
+
+            pre:
+                - transport: transport data from this instance of asyncio.Protocol
+
+            post:
+                - none
+        """
         self.transport = transport
         self.address = transport.get_extra_info('peername')
         self.data = b''
-        print('accepted connection from {}'.format(self.address))
+        print('Accepted connection from {}'.format(self.address))
 
-    def connection_lost(self, ex):
-        #instead of using address gonna sub in username
-        message = {self.username + "Has left"}
-        #implement encode message
-        self.broadcast(message)
-
-    def message_handler(self, message):
-        pass
-
-    def broadcast(self,message):
-        #broadcast to all users
-        #haven't implement this thoroughly
-        for user in self.users_list:
-            #send message to each user #probably create a message handler before doing this
     def data_received(self, data):
+        """
+            receives and buffers data from the client based on a delimiter (b'?')
 
-if _name__ == '__main__':
-    address = zen_utils.parse_command_line('asyncio server using callbacks')
+            pre:
+                - data (bytes): data from the client
+
+            post:
+                - none
+        """
+        self.data += json.loads(data)
+
+        if data is not None:
+            json_dict = data[0]
+            if "USERNAME" in json_dict:
+                if json_dict["USERNAME"] not in AsyncServer.server_info["USER_LIST"]:
+                    self.transport.write(
+                        json.dumps(
+                            {
+                                "USERNAME_ACCEPTED": True,
+                                "INFO": "welcome to the server, " + json_dict["USERNAME"] + "!"
+                            } + AsyncServer.server_info
+                        )
+                    )
+                    AsyncServer.server_info["USER_LIST"].append({json_dict["USERNAME"]: self.transport})
+                else:
+                    self.transport.write(
+                        json.dumps(
+                            {
+                                "USERNAME_ACCEPTED": False,
+                                "INFO": "username " + json_dict["USERNAME"] + " already exists."
+                            }
+                        )
+                    )
+            elif "MESSAGE" in json_dict:
+                message = json_dict["MESSAGE"]
+
+                if message[1] not in AsyncServer.server_info["USER_LIST"]:
+                    self.transport.write(json.dumps({"ERROR": error_list[0]}))
+                elif message[1] == 'ALL_USERS':
+                    AsyncServer.server_info["MESSAGES"].append(message)
+                    for i in AsyncServer.server_info["USER_LIST"]:
+                        i.write(
+                            json.dumps(
+                                {
+                                    "MESSAGES": filter(
+                                        lambda x: x[1] == 'ALL_USERS',
+                                        AsyncServer.server_info["MESSAGES"],
+                                    )[0]
+                                }
+                            )
+                        )
+                else:
+                    AsyncServer.server_info["MESSAGES"].append(message)
+                    AsyncServer.server_info["USER_LIST"][message[1]].write(
+                        json.dumps(
+                            {
+                                "MESSAGES": filter(
+                                    lambda x: x[1] == message[1],
+                                    AsyncServer.server_info["MESSAGES"],
+                                )[0]
+                            }
+                        )
+                    )
+            else:
+                print("err: no such val")
+        else:
+            print("err: no data received")
+
+    def connection_lost(self, exc):
+        """
+            prints information about the disconnection of a client
+
+            pre:
+                - exc (str): exception information
+
+            post:
+                - none
+        """
+        if exc:
+            print('client {} error: {}'.format(self.address, exc))
+        elif self.data:
+            print('client {} sent {} but then closed'
+                  .format(self.address, self.data))
+        else:
+            print('client at {} closed socket'.format(self.address))
+
+
+if __name__ == '__main__':
+    hostname = socket.gethostname()
+
+    parser = argparse.ArgumentParser(description='chat client for newfangled chat service \"whatever you want\"')
+    parser.add_argument('host', default=hostname, help='IP or hostname')
+    parser.add_argument('-p', metavar='port', type=int, default=1060,
+                        help='TCP port (default 1060)')
+    args = parser.parse_args()
 
     loop = asyncio.get_event_loop()
-
-    coro = loop.create_server(AsyncServer, 9000)
-
+    coro = loop.create_server(Server, args.host, args.p)
     server = loop.run_until_complete(coro)
-    purpose = ssl.Purpose.SERVER_AUTH
-    context = ssl.create_default_context(purpose, cafile=cafile)
-    for socket in server.sockets:
-        print("Client: {}".formate(socket.getsockname()))
-
+    print('listening at {}:'.format(hostname + ' port ' + str(args.p)))
     try:
         loop.run_forever()
     finally:
-        server.close
+        server.close()
         loop.close()
