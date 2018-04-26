@@ -22,11 +22,16 @@ import asyncio
 import argparse
 import socket
 import time
+import ssl
+import json
+
 
 class AsyncClient(asyncio.Protocol):
     def __init__(self):
         self.username = ""
         self.logged_in = False
+
+
 
     def connection_made(self,transport):
         self.transport = transport
@@ -36,6 +41,45 @@ class AsyncClient(asyncio.Protocol):
     def data_received(self, data):
         """simply prints any data that is received"""
         print("received: ", data)
+        json_dict = json.loads(data)
+
+        if "USERNAME_ACCEPTED" in json_dict:
+            boolean = json_dict.get("USERNAME_ACCEPTED")
+            if boolean == True:
+                self.logged_in = True
+                print(">Welcome! " + self.username + " Here's what you can do"
+                  "\nEnter a message to send to all users"
+                  "\n>Enter quit to quit"
+                  "\n>Enter @username + message to send a direct message to a user"
+                  "\n>Input: ")
+
+                if "INFO" in json_dict:
+                    print("Info: " + json_dict.get("INFO") + '\n')
+                elif "USER_LIST: " in json_dict:
+                    print("User list: " + json_dict.get("USER_LIST") + '\n')
+                elif "MESSAGES" in json_dict:
+                    print("Messages: " + json_dict.get("MESSAGES") + '\n')
+
+                elif "USERS_JOINED" in json_dict:
+                    print("New user(s) joined: " + json_dict.get("USERS_JOINED") + '\n')
+                elif "USERS_LEFT" in json_dict:
+                    print("User(s) left: " + json_dict.get("USERS_LEFT") + '\n')
+
+            elif boolean == False:
+                print(json_dict.get("INFO") + '\n')
+        else:
+            print("Unexpected error: " + json_dict.get("INFO") + '\n')
+
+    def send_message(self, data):
+        message = bytes(data, 'utf-8')
+        self.transport.write(message)
+
+    def connection_lost(self, ex):
+        print("Lost connection" + '\n')
+        self.logged_in = False
+        self.transport.close()
+
+
 
     @asyncio.coroutine
     def handle_user_input(self, loop):
@@ -52,14 +96,16 @@ class AsyncClient(asyncio.Protocol):
                 if message == "quit":
                     loop.stop()
                     return
+                #store message for your self and send the username
                 self.username = message
-                print(">Welcome! " + self.username + " Here's what you can do"
-                      "\nEnter a message to send to all users"
-                      "\n>Enter quit to quit"
-                      "\n>Enter @username + message to send a direct message to a user"
-                      "\n>Input: ")
-                self.logged_in = True
-                # need to implement to check if user is already in session
+                my_dict = {"USERNAME": message}
+                coded_message = json.dumps(my_dict)
+                self.send_message(coded_message)
+
+                yield from asyncio.sleep(1.0)
+                self.data_received(data)
+
+            #If user is logged in
             else:
                 message = yield from loop.run_in_executor(None, input, ">")
                 if message == "quit":
@@ -71,8 +117,13 @@ class AsyncClient(asyncio.Protocol):
                     self.send_direct_message(message)
                 #haven't implemented send message function yet
                 self.send_message(message)
+                yield from asyncio.sleep(1.0)
+                self.data_received(data)
 
-
+    def connection_lost(self, ex):
+        self.transport.close()
+        self.logged_in = False
+        return
 
 
 
@@ -95,12 +146,11 @@ if __name__ == '__main__':
 
     # the lambda client serves as a factory that just returns
     # the client instance we just created
-    purpose = ssl.Purpose.CLIENT_AUTH
-    context = ssl.create_default_context(purpose, cafile=args.cafile)
+    #purpose = ssl.Purpose.CLIENT_AUTH
+	#context = ssl.create_default_context(purpose, cafile=args.cafile)
+    #context.load_cert_chain(certfile)
 
-    context.load_cert_chain(certfile)
-
-    coro = loop.create_connection(lambda: client, args.host , 9000, context)
+    coro = loop.create_connection(lambda: client, args.host , 9000)
 
     loop.run_until_complete(coro)
 
