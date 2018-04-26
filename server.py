@@ -24,6 +24,7 @@ import time
 import random
 import asyncio
 
+"""
 counter = 0
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,6 +39,7 @@ while True:
         conn.sendall(str(counter).encode("ascii"))
         time.sleep(3 * random.random())
         counter += 1
+"""
 #Example was given by josh are the above thingy here
 #The below thingy is the one we work on
 #code was adapted from the book chapter7 btw remember to put it in somewhere
