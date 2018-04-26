@@ -22,6 +22,7 @@ data from server and user input from stdin
 import socket
 import time
 import asyncio
+import json
 
 
 class AsyncServer(asyncio.Protocol):
