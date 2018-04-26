@@ -150,7 +150,7 @@ if __name__ == '__main__':
 	#context = ssl.create_default_context(purpose, cafile=args.cafile)
     #context.load_cert_chain(certfile)
 
-    coro = loop.create_connection(lambda: client, args.host , 9000)
+    coro = loop.create_connection(lambda: client, args.host , args.p)
 
     loop.run_until_complete(coro)
 
