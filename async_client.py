@@ -103,7 +103,7 @@ class AsyncClient(asyncio.Protocol):
                 self.send_message(coded_message)
 
                 yield from asyncio.sleep(1.0)
-                self.data_received(data)
+               
 
             #If user is logged in
             else:
@@ -118,7 +118,7 @@ class AsyncClient(asyncio.Protocol):
                 #haven't implemented send message function yet
                 self.send_message(message)
                 yield from asyncio.sleep(1.0)
-                self.data_received(data)
+               
 
     def connection_lost(self, ex):
         self.transport.close()
