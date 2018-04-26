@@ -1,5 +1,4 @@
-"""async_client
-
+"""
 Champlain College CSI-235, Spring 2018
 Prof. Josh Auerbach
 
@@ -20,9 +19,9 @@ data from server and user input from stdin
 """
 
 import socket
-import time
 import asyncio
 import json
+import argparse
 
 
 class AsyncServer(asyncio.Protocol):
@@ -34,9 +33,6 @@ class AsyncServer(asyncio.Protocol):
     error_list = {
         "user does not exist",
     }
-
-    def __init__(self, server, sock, name):
-        super().__init__()
 
     def connection_made(self, transport):
         """
@@ -65,8 +61,8 @@ class AsyncServer(asyncio.Protocol):
         """
         self.data += json.loads(data)
 
-        if data is not None:
-            json_dict = data[0]
+        if self.data is not None:
+            json_dict = self.data[0]
             if "USERNAME" in json_dict:
                 if json_dict["USERNAME"] not in AsyncServer.server_info["USER_LIST"]:
                     self.transport.write(
@@ -91,7 +87,7 @@ class AsyncServer(asyncio.Protocol):
                 message = json_dict["MESSAGE"]
 
                 if message[1] not in AsyncServer.server_info["USER_LIST"]:
-                    self.transport.write(json.dumps({"ERROR": error_list[0]}))
+                    self.transport.write(json.dumps({"ERROR": AsyncServer.error_list[0]}))
                 elif message[1] == 'ALL_USERS':
                     AsyncServer.server_info["MESSAGES"].append(message)
                     for i in AsyncServer.server_info["USER_LIST"]:
@@ -151,7 +147,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     loop = asyncio.get_event_loop()
-    coro = loop.create_server(Server, args.host, args.p)
+    coro = loop.create_server(AsyncServer, args.host, args.p)
     server = loop.run_until_complete(coro)
     print('listening at {}:'.format(hostname + ' port ' + str(args.p)))
     try:
