@@ -24,17 +24,20 @@ import json
 import argparse
 import ssl
 import struct
+import datetime
 
 
 class AsyncServer(asyncio.Protocol):
     server_info = {
-        "USER_LIST": [],
+        "USER_LIST": {"SYSTEM": '0'},
         "MESSAGES": [],
     }
 
-    error_list = {
+    transports = []
+
+    error_list = [
         "user does not exist",
-    }
+    ]
 
     def connection_made(self, transport):
         """
@@ -48,35 +51,67 @@ class AsyncServer(asyncio.Protocol):
         """
         self.transport = transport
         self.address = transport.get_extra_info('peername')
-        self.data = dict()
+        self.data = b''
         print('Accepted connection from {}'.format(self.address))
 
     def add_user(self, username):
-        if username not in AsyncServer.server_info["USER_LIST"]:
-            self.transport.write(
-                json.dumps(
-                    {
-                        "USERNAME_ACCEPTED": True,
-                        "INFO": "welcome to the server, " + username + "!"
-                    }.update(AsyncServer.server_info),
-                    ensure_ascii=True
-                ).encode('utf-8')
-            )
-            AsyncServer.server_info["USER_LIST"].append({username: self.transport})
+        """
+            handles the creation of a user
+
+            pre:
+                - username (str): username to associate with given user
+            post:
+                - none
+        """
+        if username not in AsyncServer.server_info["USER_LIST"]\
+                and username is not 'ALL'\
+                and username is not 'SYSTEM':
+            # append the username and the user's IP to the server info list
+            AsyncServer.server_info["USER_LIST"].update({username: self.transport.get_extra_info('peername')})
+            AsyncServer.transports.append(self.transport)
+
+            # list of welcome info to send back to the user.
+            # we have to do it like this, as we append the contents of AsyncServer.server_info to it.
+            welcome_info = {
+                "USERNAME_ACCEPTED": True,
+                "INFO": "welcome to the server, " + username + "!"
+            }
+
+            # append server info and encode as JSON
+            welcome_info.update(AsyncServer.server_info)
+            dump = json.dumps(welcome_info, ensure_ascii=True).encode('utf-8')
+
+            # frame and send the message
+            message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
+            self.transport.write(message_to_send)
+        elif username is 'ALL' or username is 'SYSTEM':
+            # we can do this in one command this time as we don't have to append data
+            dump = json.dumps(
+                {
+                    "USERNAME_ACCEPTED": False,
+                    "INFO": "username not allowed"
+                }
+            ).encode('utf-8')
+
+            # frame and send the message
+            message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
+            self.transport.write(message_to_send)
         else:
-            self.transport.write(
-                json.dumps(
-                    {
-                        "USERNAME_ACCEPTED": False,
-                        "INFO": "username " + username + " already exists."
-                    },
-                    ensure_ascii=True
-                ).encode('utf-8')
-            )
+            # we can do this in one command this time as we don't have to append data
+            dump = json.dumps(
+                {
+                    "USERNAME_ACCEPTED": False,
+                    "INFO": "username " + username + " already exists."
+                }
+            ).encode('utf-8')
+
+            # frame and send the message
+            message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
+            self.transport.write(message_to_send)
 
     def data_received(self, data):
         """
-            receives and buffers data from the client based on a delimiter (b'?')
+            receives data and returns responses based on data
 
             pre:
                 - data (bytes): data from the client
@@ -84,14 +119,26 @@ class AsyncServer(asyncio.Protocol):
             post:
                 - none
         """
-        self.data = json.loads(data.decode('utf-8'))
+        print(data)
+        self.data = json.loads(data[4:].decode('utf-8'))
+        print(self.data)
 
         if self.data is not None:
             if "USERNAME" in self.data:
                 self.add_user(self.data["USERNAME"])
+                # this breaks everything
+                """
+                AsyncServer.broadcast((
+                    'SYSTEM',
+                    'ALL',
+                    datetime.datetime.now().strftime('%m.%d.%Y %I:%M%p'),
+                    'user {} has connected'.format(self.data["USERNAME"])
+                ))
+                """
             elif "MESSAGE" in self.data:
                 message = self.data["MESSAGE"]
-                if message[1] not in AsyncServer.server_info["USER_LIST"]:
+                if message[1] not in AsyncServer.server_info["USER_LIST"]\
+                   and message[1] != 'ALL':
                     self.transport.write(
                         json.dumps(
                             {
@@ -99,31 +146,15 @@ class AsyncServer(asyncio.Protocol):
                             }, ensure_ascii=True
                         ).encode('utf-8')
                     )
-                elif message[1] == 'ALL_USERS':
-                    AsyncServer.server_info["MESSAGES"].append(message)
-                    dump = json.dumps(
-                        {
-                            "MESSAGES": filter(
-                                lambda x: x[1] == 'ALL',
-                                AsyncServer.server_info["MESSAGES"],
-                            )[0]
-                        },
-                        ensure_ascii=True
-                    ).encode('utf-8')
-                    message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
-                    for i in AsyncServer.server_info["USER_LIST"]:
-                        i.write(message_to_send)
+                elif message[1] == 'ALL':
+                    AsyncServer.broadcast(message)
                 else:
                     AsyncServer.server_info["MESSAGES"].append(message)
-                    dump = json.dumps(
-                        {
-                            "MESSAGES": filter(
-                                lambda x: x[1] == message[1],
-                                AsyncServer.server_info["MESSAGES"],
-                            )[0]
-                        },
-                        ensure_ascii=True
-                    ).encode('utf-8')
+
+                    messages_to_send = [x for x in AsyncServer.server_info["MESSAGES"] if x[1] == message[1]]
+
+                    dump = json.dumps({"MESSAGES": messages_to_send}, ensure_ascii=True).encode('utf-8')
+
                     message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
                     AsyncServer.server_info["USER_LIST"][message[1]].write(message_to_send)
             else:
@@ -131,8 +162,8 @@ class AsyncServer(asyncio.Protocol):
         else:
             print("err: no data received")
 
-        json.dump(AsyncServer.server_info, 'SERVER_DATA.json')
-        self.data = {}
+        # json.dump(AsyncServer.server_info, 'SERVER_DATA.json')
+        self.data = b''
 
     def connection_lost(self, exc):
         """
@@ -151,6 +182,26 @@ class AsyncServer(asyncio.Protocol):
                   .format(self.address, self.data))
         else:
             print('client at {} closed socket'.format(self.address))
+            for i in AsyncServer.server_info["USER_LIST"]:
+                if self.address[0] == AsyncServer.server_info["USER_LIST"][i][0]:
+                    AsyncServer.broadcast((
+                        'SYSTEM',
+                        'ALL',
+                        datetime.datetime.now().strftime('%m.%d.%Y %I:%M%p'),
+                        'user {} has disconnected'.format(i)
+                    ))
+
+    @staticmethod
+    def broadcast(message):
+        AsyncServer.server_info["MESSAGES"].append(message)
+
+        messages_to_send = [x for x in AsyncServer.server_info["MESSAGES"] if x[1] == 'ALL']
+
+        dump = json.dumps({"MESSAGES": messages_to_send}, ensure_ascii=True).encode('utf-8')
+        message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
+
+        for i in AsyncServer.transports:
+            i.write(message_to_send)
 
 
 if __name__ == '__main__':
