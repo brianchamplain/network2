@@ -23,6 +23,7 @@ import asyncio
 import json
 import argparse
 import ssl
+import struct
 
 
 class AsyncServer(asyncio.Protocol):
@@ -34,14 +35,6 @@ class AsyncServer(asyncio.Protocol):
     error_list = {
         "user does not exist",
     }
-
-    """
-    def __init__(self, certfile, cafile=None):
-        super().__init__()
-        purpose = ssl.Purpose.CLIENT_AUTH
-        context = ssl.create_default_context(purpose, cafile=cafile)
-        context.load_cert_chain(certfile)
-    """
 
     def connection_made(self, transport):
         """
@@ -55,8 +48,31 @@ class AsyncServer(asyncio.Protocol):
         """
         self.transport = transport
         self.address = transport.get_extra_info('peername')
-        self.data = b''
+        self.data = dict()
         print('Accepted connection from {}'.format(self.address))
+
+    def add_user(self, username):
+        if username not in AsyncServer.server_info["USER_LIST"]:
+            self.transport.write(
+                json.dumps(
+                    {
+                        "USERNAME_ACCEPTED": True,
+                        "INFO": "welcome to the server, " + username + "!"
+                    }.update(AsyncServer.server_info),
+                    ensure_ascii=True
+                ).encode('utf-8')
+            )
+            AsyncServer.server_info["USER_LIST"].append({username: self.transport})
+        else:
+            self.transport.write(
+                json.dumps(
+                    {
+                        "USERNAME_ACCEPTED": False,
+                        "INFO": "username " + username + " already exists."
+                    },
+                    ensure_ascii=True
+                ).encode('utf-8')
+            )
 
     def data_received(self, data):
         """
@@ -68,64 +84,55 @@ class AsyncServer(asyncio.Protocol):
             post:
                 - none
         """
-        self.data += json.loads(data)
+        self.data = json.loads(data.decode('utf-8'))
 
         if self.data is not None:
-            json_dict = self.data[0]
-            if "USERNAME" in json_dict:
-                if json_dict["USERNAME"] not in AsyncServer.server_info["USER_LIST"]:
-                    self.transport.write(
-                        json.dumps(
-                            {
-                                "USERNAME_ACCEPTED": True,
-                                "INFO": "welcome to the server, " + json_dict["USERNAME"] + "!"
-                            } + AsyncServer.server_info
-                        )
-                    )
-                    AsyncServer.server_info["USER_LIST"].append({json_dict["USERNAME"]: self.transport})
-                else:
-                    self.transport.write(
-                        json.dumps(
-                            {
-                                "USERNAME_ACCEPTED": False,
-                                "INFO": "username " + json_dict["USERNAME"] + " already exists."
-                            }
-                        )
-                    )
-            elif "MESSAGE" in json_dict:
-                message = json_dict["MESSAGE"]
-
+            if "USERNAME" in self.data:
+                self.add_user(self.data["USERNAME"])
+            elif "MESSAGE" in self.data:
+                message = self.data["MESSAGE"]
                 if message[1] not in AsyncServer.server_info["USER_LIST"]:
-                    self.transport.write(json.dumps({"ERROR": AsyncServer.error_list[0]}))
+                    self.transport.write(
+                        json.dumps(
+                            {
+                                "ERROR": AsyncServer.error_list[0]
+                            }, ensure_ascii=True
+                        ).encode('utf-8')
+                    )
                 elif message[1] == 'ALL_USERS':
                     AsyncServer.server_info["MESSAGES"].append(message)
+                    dump = json.dumps(
+                        {
+                            "MESSAGES": filter(
+                                lambda x: x[1] == 'ALL',
+                                AsyncServer.server_info["MESSAGES"],
+                            )[0]
+                        },
+                        ensure_ascii=True
+                    ).encode('utf-8')
+                    message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
                     for i in AsyncServer.server_info["USER_LIST"]:
-                        i.write(
-                            json.dumps(
-                                {
-                                    "MESSAGES": filter(
-                                        lambda x: x[1] == 'ALL_USERS',
-                                        AsyncServer.server_info["MESSAGES"],
-                                    )[0]
-                                }
-                            )
-                        )
+                        i.write(message_to_send)
                 else:
                     AsyncServer.server_info["MESSAGES"].append(message)
-                    AsyncServer.server_info["USER_LIST"][message[1]].write(
-                        json.dumps(
-                            {
-                                "MESSAGES": filter(
-                                    lambda x: x[1] == message[1],
-                                    AsyncServer.server_info["MESSAGES"],
-                                )[0]
-                            }
-                        )
-                    )
+                    dump = json.dumps(
+                        {
+                            "MESSAGES": filter(
+                                lambda x: x[1] == message[1],
+                                AsyncServer.server_info["MESSAGES"],
+                            )[0]
+                        },
+                        ensure_ascii=True
+                    ).encode('utf-8')
+                    message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
+                    AsyncServer.server_info["USER_LIST"][message[1]].write(message_to_send)
             else:
                 print("err: no such val")
         else:
             print("err: no data received")
+
+        json.dump(AsyncServer.server_info, 'SERVER_DATA.json')
+        self.data = {}
 
     def connection_lost(self, exc):
         """
@@ -156,8 +163,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     loop = asyncio.get_event_loop()
+    #purpose = ssl.Purpose.CLIENT_AUTH
+    #context = ssl.create_default_context(purpose, cafile='ca.crt')
+    #context.load_cert_chain('localhost.pem')
     coro = loop.create_server(AsyncServer, args.host, args.p)
     server = loop.run_until_complete(coro)
+
     print('listening at {}:'.format(hostname + ' port ' + str(args.p)))
     try:
         loop.run_forever()
