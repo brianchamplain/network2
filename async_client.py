@@ -43,11 +43,11 @@ class AsyncClient(asyncio.Protocol):
 
     def send_message(self, data):
         length = self.header_struct.pack(len(data))
-        self.transport.write(length)
-        self.transport.write(data)
+        self.transport.write(length + data)
 
     def data_received(self, data):
         """simply prints any data that is received"""
+        # print(data)
         self.data += data
         if self.logged_in:
             self.print_messages(data)
@@ -74,7 +74,7 @@ class AsyncClient(asyncio.Protocol):
 
                 yield from asyncio.sleep(1.0)
 
-                self.data = self.data[4:]
+                self.data = self.data[self.data.find(b"{"):]
                 json_dict = json.loads(self.data.decode('utf-8'))
 
                 if not json_dict["USERNAME_ACCEPTED"]:
@@ -84,12 +84,12 @@ class AsyncClient(asyncio.Protocol):
                     print('\n' + json_dict['INFO'])
 
                     print('\nusers online:\n')
-                    for i in json_dict["USER_LIST"]:
+                    for i in json_dict["CURRENTLY_ONLINE"]:
                         if i != "SYSTEM":
                             print("\t- " + i)
                     print()
 
-                    self.print_messages_init(self.data)
+                    self.print_messages(self.data, init=True)
                     self.username = message
                     self.logged_in = True
 
@@ -105,11 +105,11 @@ class AsyncClient(asyncio.Protocol):
                     # Send to an individual person
                     first_white_space = message.find(" ")
                     message = (
-                        self.username, message[0:first_white_space],
+                        self.username, message[1:first_white_space],
                         datetime.datetime.now().strftime('%m.%d.%Y %I:%M%p'),
                         message[first_white_space:]
                     )
-                    send_message = json.dumps({'MESSAGE': message})
+                    send_message = json.dumps({'MESSAGE': message}).encode('utf-8')
                     self.send_message(send_message)
                 else:
                     message = (self.username, "ALL", datetime.datetime.now().strftime('%m.%d.%Y %I:%M%p'), message)
@@ -118,12 +118,6 @@ class AsyncClient(asyncio.Protocol):
                     self.send_message(dump)
 
                 yield from asyncio.sleep(1.0)
-                """
-                if json_dict["USERS_JOINED"] is not None:
-                    print("\n", json_dict["USERS_JOINED"], "\n")
-                if json_dict["USERS_LEFT"] is not None:
-                    print("\n", json_dict["USERS_LEFT"], "\n")
-                """
 
     def connection_lost(self, ex):
         print("Lost connection" + '\n')
@@ -131,23 +125,21 @@ class AsyncClient(asyncio.Protocol):
         self.transport.close()
 
     @staticmethod
-    def print_messages(data):
-        json_dict = json.loads(data[4:].decode('utf-8'))
+    def print_messages(data, init=False):
+        if init:
+            json_dict = json.loads(data.decode('utf-8'))
+        else:
+            json_dict = json.loads(data[data.find(b"{"):].decode('utf-8'))
+            os.system('cls')
 
-        os.system('cls')
+        if "ERROR" in json_dict:
+            print("error: " + json_dict["ERROR"])
+            print('--------------------------------------------')
+            return
 
         for i in json_dict["MESSAGES"]:
-            print(("{0:16}@ " + i[2] + ": " + str(i[3])).format(str(i[0])))
+            print(("{0:<16}@ {1}: {2}".format(str(i[0]), i[2], str(i[3]))))
         print('--------------------------------------------')
-
-    @staticmethod
-    def print_messages_init(data):
-        json_dict = json.loads(data.decode('utf-8'))
-
-        for i in json_dict["MESSAGES"]:
-            print(("{0:16}@ " + i[2] + ": " + str(i[3])).format(str(i[0])))
-        print('--------------------------------------------')
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Example client')
@@ -163,14 +155,10 @@ if __name__ == '__main__':
     # we only need one client instance
     client = AsyncClient()
 
-    # the lambda client serves as a factory that just returns
-    # the client instance we just created
-    # purpose = ssl.Purpose.CLIENT_AUTH
-    # context = ssl.create_default_context(purpose, cafile=args.cafile)
-    # context.load_cert_chain(certfile)
-    # Add ssl for certifacate later
+    purpose = ssl.Purpose.SERVER_AUTH
+    context = ssl.create_default_context(purpose, cafile=args.cafile)
 
-    coro = loop.create_connection(lambda: client, args.host, args.p)
+    coro = loop.create_connection(lambda: client, args.host, args.p, ssl=context, server_hostname='localhost')
 
     loop.run_until_complete(coro)
 
