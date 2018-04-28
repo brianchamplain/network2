@@ -198,9 +198,9 @@ class AsyncServer(asyncio.Protocol):
     def broadcast(message):
         AsyncServer.server_info["MESSAGES"].append(message)
 
-        messages_to_send = [x for x in AsyncServer.server_info["MESSAGES"] if x[1] == 'ALL']
+        # messages_to_send = [x for x in AsyncServer.server_info["MESSAGES"] if x[1] == 'ALL']
 
-        dump = json.dumps({"MESSAGES": messages_to_send}, ensure_ascii=True).encode('utf-8')
+        dump = json.dumps({"MESSAGES": AsyncServer.server_info["MESSAGES"]}, ensure_ascii=True).encode('utf-8')
         message_to_send = (struct.Struct('!I').pack(len(dump)) + dump)
 
         for i in AsyncServer.transports:
