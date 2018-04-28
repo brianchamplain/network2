@@ -103,11 +103,11 @@ class AsyncClient(asyncio.Protocol):
                     print('you must enter a message')
                 elif message[0] == "@":
                     # Send to an individual person
-                    first_white_space = message.find(" ") + 1
+                    first_white_space = message.find(" ")
                     message = (
                         self.username, message[1:first_white_space],
                         datetime.datetime.now().strftime('%m.%d.%Y %I:%M%p'),
-                        message[first_white_space:]
+                        message[first_white_space + 1:]
                     )
                     send_message = json.dumps({'MESSAGE': message}).encode('utf-8')
                     self.send_message(send_message)
