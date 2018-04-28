@@ -124,8 +124,7 @@ class AsyncClient(asyncio.Protocol):
         self.logged_in = False
         self.transport.close()
 
-    @staticmethod
-    def print_messages(data, init=False):
+    def print_messages(self, data, init=False):
         if init:
             json_dict = json.loads(data.decode('utf-8'))
         else:
@@ -138,7 +137,8 @@ class AsyncClient(asyncio.Protocol):
             return
 
         for i in json_dict["MESSAGES"]:
-            print(("{0:<16}@ {1}: {2}".format(str(i[0]), i[2], str(i[3]))))
+            if i[1] == "ALL" or i[1] == self.username or i[0] == self.username:
+                print(("{0:<16}@ {1}: {2}".format(str(i[0]), i[2], str(i[3]))))
         print('--------------------------------------------')
 
 if __name__ == '__main__':

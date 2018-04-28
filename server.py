@@ -167,7 +167,7 @@ class AsyncServer(asyncio.Protocol):
                 elif message[1] == 'ALL':
                     AsyncServer.broadcast(message)
                 else:
-                    AsyncServer.direct_message(message)
+                    AsyncServer.broadcast(message)
         else:
             print("err: no data received")
 
@@ -231,8 +231,8 @@ class AsyncServer(asyncio.Protocol):
 
     @staticmethod
     def user_disconnected(ip, message):
-        for i in AsyncServer.server_info["USER_LIST"]:
-            if ip == AsyncServer.server_info["USER_LIST"][i][0]:
+        for i in AsyncServer.server_info["CURRENTLY_ONLINE"]:
+            if ip == AsyncServer.server_info["CURRENTLY_ONLINE"][i][0]:
                 AsyncServer.broadcast((
                     'SYSTEM',
                     'ALL',
@@ -240,6 +240,7 @@ class AsyncServer(asyncio.Protocol):
                     message.format(i)
                 ))
                 del AsyncServer.server_info["CURRENTLY_ONLINE"][i]
+                return
 
 
 if __name__ == '__main__':
